@@ -1,0 +1,156 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © ujjawal
+//@version=4
+
+// inspired by © IldarAkhmetgaleev (AkhIL) - "Poor man's volume profile" - "PMVolProf"
+
+study("Volume Profile Array's [ujjawal]", overlay=true, max_lines_count=500)
+switch = input("high/low", title="", options=["high/low", "close"])
+
+int   i_period          = input(300                        , title = "period"           )  
+int   i_width           = input(50                         , title = "max width"        )
+int   i_sections        = input(50                         , title = "sections"         )
+int   i_lw              = input(3                          , title = "linewidth"        )
+
+color i_color           = input(color.new(color.gray  , 70), title = "color (general)"  )
+color i_colMx           = input(color.new(color.orange, 50), title = "color (max)"      )
+color i_colMn           = input(color.new(color.blue  , 60), title = "color (min)"      )
+
+bool  onlyMaxMin        = input(false                      , title = "Only show max/min")
+
+float highest_          = highest(high, i_period                                        )
+float lowest_           = lowest (low , i_period                                        )
+float highest_row_value = 0
+float lowest_row_value  = 0
+
+line linet              = na, line.delete(linet)
+line lineb              = na, line.delete(lineb)
+line lineh              = na, line.delete(lineh)
+
+line line1              = na, line.delete(line1)
+
+a_position   = array.new_float(i_sections)
+a_row_low    = array.new_float(i_sections)
+a_row_high   = array.new_float(i_sections)
+a_row_value  = array.new_float(i_sections)
+a_aboveC     = array.new_float(i_sections)
+a_belowC     = array.new_float(i_sections)
+
+a_row_width  = array.new_int  (i_sections)
+a_colorMx    = array.new_int  (i_sections)
+a_colorMn    = array.new_int  (i_sections)
+
+for i = 0 to i_sections - 1
+    array.set(a_row_low   , i, 0.   )
+    array.set(a_row_high  , i, 0.   )
+    array.set(a_position  , i, na   )  
+    array.set(a_row_value , i, 0.   )
+    array.set(a_row_width , i, 0    )
+    array.set(a_colorMx   , i, 0    )
+    array.set(a_colorMn   , i, 0    )
+
+if barstate.islast
+
+	height_     = highest_ - lowest_                                            // height of volume profile
+	height_part =  height_ / i_sections                                         // split in x i_sections
+    for i = 0 to i_sections - 1
+        array.set(a_row_low , i, lowest_ + height_part *  i     )
+        array.set(a_row_high, i, lowest_ + height_part * (i + 1))
+    
+	    for j = 0 to i_period + 1
+            if (switch == "high/low" ? low[j] < array.get(a_row_high, i) and high[j]  > array.get(a_row_low, i) : 
+                                     close[j] < array.get(a_row_high, i) and close[j] > array.get(a_row_low, i))
+                
+                array.set(a_row_value, i, array.get(a_row_value, i) + nz(volume[j]))
+                
+highest_row_value := array.max(a_row_value)
+lowest_row_value  := array.min(a_row_value)
+
+//maxAbove = 0., maxBelow = 0., minAbove = 0., minBelow = 0.
+// get the sections above/below close
+//if barstate.islast
+//    for i = 0 to i_sections - 1
+//        if array.get(a_row_low, i) > close 
+//            array.unshift(a_aboveC, array.get(a_row_value, i))
+//        else
+//            array.unshift(a_belowC, array.get(a_row_value, i))
+//maxAbove := array.max(a_aboveC), maxBelow := array.max(a_belowC), minAbove := array.min(a_aboveC), minBelow := array.min(a_belowC)
+
+for i = 0 to i_sections - 1
+    array.set(a_position , i, avg(array.get(a_row_low, i), array.get(a_row_high, i)))
+    array.set(a_row_width, i, floor(i_width * array.get(a_row_value, i)  / highest_row_value))
+
+linet := line.new (timenow                                            , highest_, timenow - ((time_close - time_close[1]) * i_period), highest_, xloc = xloc.bar_time, color = color.new(color.blue, 93))
+lineb := line.new (timenow                                            , lowest_ , timenow - ((time_close - time_close[1]) * i_period), lowest_ , xloc = xloc.bar_time, color = color.new(color.blue, 93))
+lineh := line.new (timenow - ((time_close - time_close[1]) * i_period), highest_, timenow - ((time_close - time_close[1]) * i_period), lowest_ , xloc = xloc.bar_time, color = color.new(color.blue, 63))
+
+// sections that are larger/smaller then the ones next to them
+i_reach = input(defval = 3, minval = 1, maxval = 5, title = "compare # sections above/below for max/min")
+
+for i = i_reach to array.size(a_colorMx) - (i_reach + 1)
+    if i_reach == 1
+        if array.get(a_row_value, i) > array.get(a_row_value, i - 1) and array.get(a_row_value, i) > array.get(a_row_value, i + 1) 
+            array.set(a_colorMx, i, 1)
+        if array.get(a_row_value, i) < array.get(a_row_value, i - 1) and array.get(a_row_value, i) < array.get(a_row_value, i + 1) 
+            array.set(a_colorMn, i, 1)    
+    else if i_reach == 2
+        if array.get(a_row_value, i) > array.get(a_row_value, i - 1) and array.get(a_row_value, i) > array.get(a_row_value, i + 1) and 
+           array.get(a_row_value, i) > array.get(a_row_value, i - 2) and array.get(a_row_value, i) > array.get(a_row_value, i + 2) 
+            array.set(a_colorMx, i, 1)
+        if array.get(a_row_value, i) < array.get(a_row_value, i - 1) and array.get(a_row_value, i) < array.get(a_row_value, i + 1) and
+           array.get(a_row_value, i) < array.get(a_row_value, i - 2) and array.get(a_row_value, i) < array.get(a_row_value, i + 2) 
+            array.set(a_colorMn, i, 1) 
+    else if i_reach == 3
+        if array.get(a_row_value, i) > array.get(a_row_value, i - 1) and array.get(a_row_value, i) > array.get(a_row_value, i + 1) and 
+           array.get(a_row_value, i) > array.get(a_row_value, i - 2) and array.get(a_row_value, i) > array.get(a_row_value, i + 2) and
+           array.get(a_row_value, i) > array.get(a_row_value, i - 3) and array.get(a_row_value, i) > array.get(a_row_value, i + 3) 
+            array.set(a_colorMx, i, 1)
+        if array.get(a_row_value, i) < array.get(a_row_value, i - 1) and array.get(a_row_value, i) < array.get(a_row_value, i + 1) and
+           array.get(a_row_value, i) < array.get(a_row_value, i - 2) and array.get(a_row_value, i) < array.get(a_row_value, i + 2) and            
+           array.get(a_row_value, i) < array.get(a_row_value, i - 3) and array.get(a_row_value, i) < array.get(a_row_value, i + 3) 
+            array.set(a_colorMn, i, 1) 
+    else if i_reach == 4
+        if array.get(a_row_value, i) > array.get(a_row_value, i - 1) and array.get(a_row_value, i) > array.get(a_row_value, i + 1) and 
+           array.get(a_row_value, i) > array.get(a_row_value, i - 2) and array.get(a_row_value, i) > array.get(a_row_value, i + 2) and
+           array.get(a_row_value, i) > array.get(a_row_value, i - 3) and array.get(a_row_value, i) > array.get(a_row_value, i + 3) and
+           array.get(a_row_value, i) > array.get(a_row_value, i - 4) and array.get(a_row_value, i) > array.get(a_row_value, i + 4) 
+            array.set(a_colorMx, i, 1)
+        if array.get(a_row_value, i) < array.get(a_row_value, i - 1) and array.get(a_row_value, i) < array.get(a_row_value, i + 1) and
+           array.get(a_row_value, i) < array.get(a_row_value, i - 2) and array.get(a_row_value, i) < array.get(a_row_value, i + 2) and            
+           array.get(a_row_value, i) < array.get(a_row_value, i - 3) and array.get(a_row_value, i) < array.get(a_row_value, i + 3) and
+           array.get(a_row_value, i) < array.get(a_row_value, i - 4) and array.get(a_row_value, i) < array.get(a_row_value, i + 4) 
+            array.set(a_colorMn, i, 1) 
+    else if i_reach == 5
+        if array.get(a_row_value, i) > array.get(a_row_value, i - 1) and array.get(a_row_value, i) > array.get(a_row_value, i + 1) and 
+           array.get(a_row_value, i) > array.get(a_row_value, i - 2) and array.get(a_row_value, i) > array.get(a_row_value, i + 2) and
+           array.get(a_row_value, i) > array.get(a_row_value, i - 3) and array.get(a_row_value, i) > array.get(a_row_value, i + 3) and
+           array.get(a_row_value, i) > array.get(a_row_value, i - 4) and array.get(a_row_value, i) > array.get(a_row_value, i + 4) and
+           array.get(a_row_value, i) > array.get(a_row_value, i - 5) and array.get(a_row_value, i) > array.get(a_row_value, i + 5) 
+            array.set(a_colorMx, i, 1)
+        if array.get(a_row_value, i) < array.get(a_row_value, i - 1) and array.get(a_row_value, i) < array.get(a_row_value, i + 1) and
+           array.get(a_row_value, i) < array.get(a_row_value, i - 2) and array.get(a_row_value, i) < array.get(a_row_value, i + 2) and            
+           array.get(a_row_value, i) < array.get(a_row_value, i - 3) and array.get(a_row_value, i) < array.get(a_row_value, i + 3) and
+           array.get(a_row_value, i) < array.get(a_row_value, i - 4) and array.get(a_row_value, i) < array.get(a_row_value, i + 4) and
+           array.get(a_row_value, i) < array.get(a_row_value, i - 5) and array.get(a_row_value, i) < array.get(a_row_value, i + 5) 
+            array.set(a_colorMn, i, 1) 
+
+for i = 0 to i_sections - 1 
+    if onlyMaxMin == false
+        line1 := line.new (
+         timenow, array.get(a_position , i), timenow - ((time_close - time_close[1]) * array.get(a_row_width, i)), array.get(a_position, i), xloc = xloc.bar_time, width = i_lw,
+         color  = array.get(a_colorMx  , i) == 1 ? i_colMx : array.get(a_colorMn, i) == 1 ? i_colMn : i_color
+                  //array.get(a_row_value, i) == maxAbove or array.get(a_row_value, i) == maxBelow ? i_colMx : 
+                  //array.get(a_row_value, i) == minAbove or array.get(a_row_value, i) == minBelow ? i_colMn : i_color
+                          )
+    else if onlyMaxMin == true and 
+     array.get(a_colorMx  , i) == 1 or array.get(a_colorMn, i) == 1
+     //array.get(a_row_value, i) == maxAbove or array.get(a_row_value, i) == maxBelow or 
+     //array.get(a_row_value, i) == minAbove or array.get(a_row_value, i) == minBelow 
+        line1 := line.new (
+         timenow, array.get(a_position , i), timenow - ((time_close - time_close[1]) * array.get(a_row_width, i)), array.get(a_position, i), xloc = xloc.bar_time, width = i_lw,
+         color  = 
+          array.get(a_colorMx  , i) == 1 ? i_colMx : array.get(a_colorMn, i) == 1 ? i_colMn : i_colMn
+          //array.get(a_row_value, i) == maxAbove or array.get(a_row_value, i) == maxBelow ? i_colMx : i_colMn 
+                          )
+                          
+
